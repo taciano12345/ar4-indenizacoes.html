@@ -371,15 +371,16 @@ body::after{
 .btn-sm{padding:5px 12px;font-size:12px}
 
 /* ══════════════ CALENDAR ══════════════ */
-.cg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cg{display:grid;grid-template-columns:repeat(7,minmax(44px,1fr));gap:3px}
 .ch2{
   text-align:center;padding:7px 0;font-size:10px;
   font-weight:700;color:var(--w4);text-transform:uppercase;letter-spacing:.5px;
 }
 .cc{
   background:var(--glass);backdrop-filter:blur(10px);
-  border-radius:var(--r);padding:6px;min-height:72px;
+  border-radius:var(--r);padding:5px;min-height:68px;
   cursor:pointer;transition:all .15s;border:1px solid var(--glass-border);
+  overflow:hidden;min-width:0;
 }
 .cc:hover{background:var(--glass2);border-color:var(--glass-border2)}
 .cc.oth{opacity:.15;pointer-events:none}
@@ -387,7 +388,7 @@ body::after{
 .cc.ih{background:var(--purple2);border-color:rgba(139,92,246,.2)}
 .cc.today{border-color:var(--y);box-shadow:0 0 16px rgba(240,180,41,.15)}
 .cn{font-size:11px;font-weight:700;color:var(--w4);margin-bottom:3px;line-height:1}
-.cp{border-radius:4px;padding:2px 4px;margin-bottom:2px;font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block}
+.cp{border-radius:3px;padding:1px 3px;margin-bottom:1px;font-size:8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block}
 .cpp{background:var(--green2);color:var(--green)}
 .cpd{background:var(--orange2);color:var(--orange)}
 .cpf{background:var(--purple2);color:var(--purple)}
@@ -710,7 +711,7 @@ body.light::before,body.light::after{display:none}
 
   /* Calendar */
   .cg{gap:2px!important}
-  .cc{min-height:46px!important;padding:3px!important;border-radius:5px!important}
+  .cc{min-height:50px!important;padding:3px!important;border-radius:5px!important;min-width:0!important;overflow:hidden!important}
   .cn{font-size:10px!important}
   .cp{font-size:7.5px!important;padding:1px 3px!important}
   .ch2{font-size:9px!important;padding:4px 0!important}
@@ -1665,9 +1666,9 @@ calendario(el){
       return `<div style="background:${bg2};color:${fc};border-radius:3px;padding:2px 5px;font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${firstName}</div>`;
     }).join('');
 
-    const totalLine=dayTotal>0?`<div style="font-size:10px;color:var(--y);font-family:'IBM Plex Mono',monospace;font-weight:600;margin-top:3px">${brl(dayTotal)}</div>`:'';
+    const totalLine=dayTotal>0?`<div style="font-size:9px;color:var(--y);font-family:'IBM Plex Mono',monospace;font-weight:600;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${brl(dayTotal).replace('R$ ','')}</div>`:'';
 
-    cells+=`<div onclick="showDay(${d},'${mesAtivo}')" style="min-height:88px;background:${bg};border:1px solid ${border};border-radius:6px;padding:5px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;min-height:72px"
+    cells+=`<div onclick="showDay(${d},'${mesAtivo}')" style="background:${bg};border:1px solid ${border};border-radius:6px;padding:4px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;min-height:68px;overflow:hidden"
       onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='${bg}'">
       <div style="margin-bottom:5px"><span style="${numStyle}">${d}</span></div>
       ${pills}
@@ -1698,7 +1699,7 @@ calendario(el){
     </div>
 
     <!-- KPIs do mês -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px" class="au1">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px" class="au1">
       <div style="background:var(--y);border-radius:14px;padding:18px 20px">
         <div style="font-size:11px;color:rgba(0,0,0,.5);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Total do Mês</div>
         <div style="font-size:22px;font-weight:700;color:var(--bg);font-family:'IBM Plex Mono',monospace;letter-spacing:-.5px">${brl(total)}</div>
@@ -1718,9 +1719,9 @@ calendario(el){
     </div>
 
     <!-- CALENDÁRIO GRANDE -->
-    <div class="au2" style="background:var(--bg2);border:1px solid var(--bg3);border-radius:16px;padding:20px;margin-bottom:14px">
+    <div class="au2" style="background:var(--bg2);border:1px solid var(--bg3);border-radius:12px;padding:12px;margin-bottom:12px">
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%">
-        <div style="display:grid;grid-template-columns:repeat(7,minmax(42px,1fr));gap:4px;min-width:340px">${cells}</div>
+        <div style="display:grid;grid-template-columns:repeat(7,minmax(44px,1fr));gap:3px;min-width:320px;width:max(100%,320px)">${cells}</div>
       </div>
     </div>
 
@@ -2393,6 +2394,97 @@ eventos(el){
             <th style="text-align:right;padding:8px 12px;font-size:10px;font-weight:600;color:var(--w4);text-transform:uppercase">Valor</th>
           </tr></thead>
           <tbody>${tipoRows||`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--w3)">Nenhum registro</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`}`;
+},
+
+
+consultores(el){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const isFerx=i=>i.status==='FERIADO';
+
+  const todosCons=getConsultores();
+  const selCons=window._consNome||'';
+
+  // Build consultor select options
+  const consOpts=`<option value="">— Selecione o consultor —</option>`+
+    todosCons.map(c=>`<option value="${c}" ${c===selCons?'selected':''}>${c}</option>`).join('');
+
+  // Gather all indenizacoes for selected consultor across all months
+  let indFiltradas=[];
+  let totalGeral=0, totalPago=0, totalPend=0, countPago=0, countPend=0;
+
+  if(selCons){
+    Object.entries(DB.meses).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([mk,mes])=>{
+      (mes.indenizacoes||[]).filter(i=>!isFerx(i)&&i.consultor===selCons).forEach(i=>{
+        indFiltradas.push({...i,mesKey:mk,mesLabel:mes.label});
+        totalGeral+=i.valorLiq||0;
+        if(i.status==='PAGO'){totalPago+=i.valorLiq||0;countPago++;}
+        else{totalPend+=i.valorLiq||0;countPend++;}
+      });
+    });
+  }
+
+  const rows=indFiltradas.map(i=>`
+    <tr onclick="showDetail(${i.id},'${i.mesKey}')" style="cursor:pointer">
+      <td class="nc">${i.nome}</td>
+      <td class="mc">${fdt(i.data)}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--w3)">${i.mesLabel}</td>
+      <td>${i.parcela?`<span style="font-size:11px;color:var(--w3)">${i.parcela}</span>`:'-'}</td>
+      <td><span class="badge ${statusColor(i.status)}">${i.status}</span></td>
+      <td class="vc">${brl(i.valorLiq||0)}</td>
+    </tr>`).join('');
+
+  el.innerHTML=`
+    <div class="tb au">
+      <div><h1>Por Consultor</h1><p>Histórico completo de indenizações por consultor</p></div>
+    </div>
+
+    <div class="card au1" style="margin-bottom:16px">
+      <div class="ch"><span class="ct">Selecionar Consultor</span></div>
+      <select class="fs" style="width:100%;max-width:420px" onchange="window._consNome=this.value;nav('consultores')">
+        ${consOpts}
+      </select>
+    </div>
+
+    ${!selCons?`
+    <div class="card" style="text-align:center;padding:40px;color:var(--w3)">
+      <svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" fill="none" stroke-width="1.5" style="margin:0 auto 12px;display:block;opacity:.35"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <div style="font-size:14px;font-weight:500;margin-bottom:6px">Selecione um consultor acima</div>
+      <div style="font-size:12px">O histórico completo de indenizações será exibido aqui.</div>
+    </div>`:indFiltradas.length===0?`
+    <div class="card" style="text-align:center;padding:40px;color:var(--w3)">
+      <div style="font-size:14px;font-weight:500;margin-bottom:6px">Nenhuma indenização encontrada</div>
+      <div style="font-size:12px">Nenhuma indenização foi atribuída a <strong>${selCons}</strong>.</div>
+    </div>`:`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px" class="au2">
+      <div class="kpi ky">
+        <div class="kl">Total Geral</div>
+        <div class="kv">${brl(totalGeral)}</div>
+        <div class="ks">${indFiltradas.length} indenizações</div>
+      </div>
+      <div class="kpi">
+        <div class="kl">Total Pago</div>
+        <div class="kv" style="color:#4ade80">${brl(totalPago)}</div>
+        <div class="ks" style="color:#4ade80">${countPago} pagamentos</div>
+      </div>
+      <div class="kpi">
+        <div class="kl">Total Pendente</div>
+        <div class="kv" style="color:#fb923c">${brl(totalPend)}</div>
+        <div class="ks" style="color:#fb923c">${countPend} pendentes</div>
+      </div>
+    </div>
+    <div class="card au3">
+      <div class="ch"><span class="ct">${selCons}</span><span style="font-size:11px;color:var(--w3)">${indFiltradas.length} registros</span></div>
+      <div class="tw">
+        <table class="dt">
+          <thead><tr>
+            <th>Associado</th><th>Data</th><th>Mês</th><th>Parcela</th><th>Status</th>
+            <th style="text-align:right">Valor Líquido</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
         </table>
       </div>
     </div>`}`;
@@ -3213,6 +3305,35 @@ function verificarNotificacoesAgendadas(){
     if(!cfg.notifDiaria)return;
   }catch(e){}
 }
+
+// ══════════════ GET EVENT TYPES ══════════════
+function getEventTypes(mesKey){
+  let indenizacoes=[];
+  if(mesKey&&DB.meses[mesKey]){
+    indenizacoes=DB.meses[mesKey].indenizacoes.filter(i=>i.status!=='FERIADO');
+  } else {
+    Object.values(DB.meses).forEach(m=>{
+      (m.indenizacoes||[]).forEach(i=>{ if(i.status!=='FERIADO') indenizacoes.push(i); });
+    });
+  }
+  const map={};
+  indenizacoes.forEach(i=>{
+    const tipo=i.tipo||i.status||'Outros';
+    if(!map[tipo]) map[tipo]={tipo,total:0,valor:0,count:0};
+    map[tipo].total+=(i.valorLiq||0);
+    map[tipo].valor+=(i.valorFipe||0);
+    map[tipo].count++;
+  });
+  return Object.values(map).sort((a,b)=>b.total-a.total);
+}
+
+// ══════════════ GET NOTIF STATUS ══════════════
+const NOTIF_KEY='ar4_notif_enabled';
+function getNotifStatus(){
+  if(!('Notification' in window)) return 'unsupported';
+  return Notification.permission; // 'granted','denied','default'
+}
+
 // ══════════════ TOGGLE THEME ══════════════
 function toggleTheme(){
   const cur=document.documentElement.style.getPropertyValue('--bg').trim();
