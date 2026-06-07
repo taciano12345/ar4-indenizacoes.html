@@ -1169,6 +1169,8 @@ async function loadDB() {
         const ph = JSON.parse(h);
         ph.forEach(item => { if (!HIST.find(x => x.key === item.key)) HIST.push(item); });
       }
+      // Store most recent month — mesAtivo updated after declaration
+      window._pendingMesAtivo = Object.keys(DB.meses).sort().pop();
     } catch(e) { console.warn('[AR4] loadDB error:', e); }
     return;
   }
@@ -1303,6 +1305,9 @@ try{
       if(_e1)_e1.textContent=_ini;
       if(_e2)_e2.textContent=_found.nome;
       if(_e3)_e3.textContent=role==='ges'?'Administrador':'Diretoria';
+      // Always use most recent month
+      const _mk=Object.keys(DB.meses).sort();
+      if(_mk.length>0)mesAtivo=_mk[_mk.length-1];
       buildNav();resetTimeout();nav('dashboard');
     }
   }
@@ -1336,6 +1341,8 @@ HIST.push({key:'2026-06',label:'Jun/26',valor:165071,pagamentos:11});
 
 // ══════════════ STATE ══════════════
 let role='dir',page='dashboard',mesAtivo='2026-06',filterTab='todos',editId=null;
+// Apply most recent month from loadDB if available
+if(window._pendingMesAtivo) mesAtivo=window._pendingMesAtivo;
 
 // ══════════════ UTILS ══════════════
 const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1401,6 +1408,9 @@ function login(){
     document.getElementById('sbav').textContent=initials;
     document.getElementById('sbnm').textContent=found.nome;
     document.getElementById('sbrl').textContent=role==='ges'?'Administrador':'Diretoria';
+    // Set mesAtivo to most recent month
+    const _lk=Object.keys(DB.meses).sort();
+    if(_lk.length>0)mesAtivo=_lk[_lk.length-1];
     buildNav();
     resetTimeout();
     if(checkForcePassword())return;
