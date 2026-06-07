@@ -1619,7 +1619,7 @@ calendario(el){
   let cells=days.map(d=>`
     <div style="text-align:center;padding:8px 0;font-size:11px;font-weight:700;color:var(--w4);text-transform:uppercase;letter-spacing:.6px">${d}</div>`).join('');
 
-  for(let i=0;i<primeiroDia;i++) cells+=`<div style="min-height:88px;background:var(--bg3);border-radius:8px;opacity:.15"></div>`;
+  for(let i=0;i<primeiroDia;i++) cells+=`<div style="min-height:72px;background:var(--bg3);border-radius:6px;opacity:.15"></div>`;
 
   for(let d=1;d<=totalDias;d++){
     const ents=payMap[d]||[];
@@ -1653,7 +1653,7 @@ calendario(el){
 
     const totalLine=dayTotal>0?`<div style="font-size:10px;color:var(--y);font-family:'IBM Plex Mono',monospace;font-weight:600;margin-top:3px">${brl(dayTotal)}</div>`:'';
 
-    cells+=`<div onclick="showDay(${d},'${mesAtivo}')" style="min-height:88px;background:${bg};border:1px solid ${border};border-radius:8px;padding:8px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column"
+    cells+=`<div onclick="showDay(${d},'${mesAtivo}')" style="min-height:88px;background:${bg};border:1px solid ${border};border-radius:6px;padding:5px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;min-height:72px"
       onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='${bg}'">
       <div style="margin-bottom:5px"><span style="${numStyle}">${d}</span></div>
       ${pills}
@@ -1705,7 +1705,9 @@ calendario(el){
 
     <!-- CALENDÁRIO GRANDE -->
     <div class="au2" style="background:var(--bg2);border:1px solid var(--bg3);border-radius:16px;padding:20px;margin-bottom:14px">
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%">
+        <div style="display:grid;grid-template-columns:repeat(7,minmax(42px,1fr));gap:4px;min-width:340px">${cells}</div>
+      </div>
     </div>
 
     <!-- LEGENDA -->
@@ -2645,7 +2647,7 @@ aprovacoes(el){
       else if(hasPay){bg='rgba(245,197,24,.06)';border='rgba(245,197,24,.4)';numColor='var(--y)';}
       const allNames=ents.filter(e=>!isH).map(e=>e.nome.split(' ')[0]);
       calCells+=`<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:7px;min-height:72px;overflow:hidden">
-        <div style="font-size:12px;font-weight:700;color:${numColor};margin-bottom:4px">${d}</div>
+        <div style="font-size:11px;font-weight:700;color:${numColor};margin-bottom:4px">${d}</div>
         ${isH?'<div style="font-size:10px;color:#a78bfa;font-weight:600">Feriado</div>':''}
         ${allNames.slice(0,2).map(n=>`<div style="font-size:10px;color:var(--y);font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n}</div>`).join('')}
         ${allNames.length>2?`<div style="font-size:9px;color:var(--w4)">+${allNames.length-2}</div>`:''}
