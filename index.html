@@ -3179,6 +3179,373 @@ function toast(msg,type='suc'){
   t.className=`toast ${type}`;t.classList.add('on');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),3200);
 }
+
+// ══════════════ THEME ══════════════
+function applyTheme(t){
+  const r=document.documentElement;
+  if(t==='light'){
+    r.style.setProperty('--bg','#f5f5f5');r.style.setProperty('--bg2','#ffffff');
+    r.style.setProperty('--bg3','#eeeeee');r.style.setProperty('--bg4','#dddddd');
+    r.style.setProperty('--bg5','#cccccc');r.style.setProperty('--w','#111111');
+    r.style.setProperty('--w2','#333333');r.style.setProperty('--w3','#555555');r.style.setProperty('--w4','#888888');
+  } else {
+    r.style.setProperty('--bg','#0c0c0c');r.style.setProperty('--bg2','#141414');
+    r.style.setProperty('--bg3','#1c1c1c');r.style.setProperty('--bg4','#252525');
+    r.style.setProperty('--bg5','#2e2e2e');r.style.setProperty('--w','#efefef');
+    r.style.setProperty('--w2','#b0b0b0');r.style.setProperty('--w3','#707070');r.style.setProperty('--w4','#404040');
+  }
+  try{localStorage.setItem('ar4_theme',t);}catch(e){}
+}
+
+// ══════════════ FORCE PASSWORD CHANGE ══════════════
+function checkForcePassword(){
+  const users=getUsers();
+  const u=users.find(x=>x.id===currentUser?.id);
+  if(u&&u.forceChange){nav('senhas');toast('Troque sua senha antes de continuar.','inf');return true;}
+  return false;
+}
+
+// ══════════════ NOTIFICAÇÕES AGENDADAS ══════════════
+function verificarNotificacoesAgendadas(){
+  try{
+    if(!('Notification' in window))return;
+    const cfg=JSON.parse(localStorage.getItem('ar4_agend')||'{}');
+    if(!cfg.notifDiaria)return;
+  }catch(e){}
+}
+// ══════════════ TOGGLE THEME ══════════════
+function toggleTheme(){
+  const cur=document.documentElement.style.getPropertyValue('--bg').trim();
+  const isLight=(cur==='#f5f5f5');
+  applyTheme(isLight?'dark':'light');
+  const btn=document.getElementById('themeBtn');
+  const btnMob=document.getElementById('themeBtnMob');
+  const label=isLight?'🌙 Escuro':'☀️ Claro';
+  if(btn)btn.innerHTML=btn.innerHTML.replace(/[☀️🌙].*/,label);
+  if(btnMob)btnMob.innerHTML=btnMob.innerHTML.replace(/[☀️🌙].*/,label);
+}
+
+// ══════════════ MES LABEL ══════════════
+const mesLabel=k=>DB.meses[k]?DB.meses[k].label:k;
+
+// ══════════════ TIMEOUT DE SESSÃO ══════════════
+let _timeoutTimer=null;
+function resetTimeout(){
+  clearTimeout(_timeoutTimer);
+  _timeoutTimer=setTimeout(()=>{
+    const w=document.getElementById('timeoutWarn');
+    if(w)w.style.display='flex';
+  },14*60*1000);
+}
+document.addEventListener('click',resetTimeout);
+document.addEventListener('keydown',resetTimeout);
+
+// ══════════════ RENDER LIST ══════════════
+function renderList(el){
+  if(!el){el=document.getElementById('pg-indenizacoes');if(!el)return;}
+  const mes=getMes();
+  const all=mes.indenizacoes||[];
+  const ft=filterTab;
+  const items=ft==='todos'?all:ft==='pago'?all.filter(i=>i.status==='PAGO'):ft==='pendente'?all.filter(i=>i.status==='PENDENTE'||i.status==='DEPENDE DO BOLETO'):all.filter(i=>i.status===ft);
+  const pend=all.filter(i=>i.status==='PENDENTE'||i.status==='DEPENDE DO BOLETO').length;
+  const pago=all.filter(i=>i.status==='PAGO').length;
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const isFer=i=>i.status==='FERIADO';
+  const rows=items.map(i=>`
+    <tr onclick="showDetail(${i.id},'${mesAtivo}')">
+      <td class="nc">${isFer(i)?'<span class="badge bf">FERIADO</span>':i.nome}</td>
+      <td class="mc">${fdt(i.data)}</td>
+      <td class="mc">${i.parcela||'—'}</td>
+      <td><span class="badge ${statusColor(i.status)}">${i.status}</span></td>
+      <td class="vc">${i.valorLiq>0?brl(i.valorLiq):'—'}</td>
+    </tr>`).join('');
+  el.innerHTML=`
+    <div class="tb au"><div><h1>Indenizações</h1><p>${mesLabel(mesAtivo)} · ${all.length} registros</p></div></div>
+    <div class="card au1">
+      <div class="ch">
+        <div class="tabs">
+          <button class="tab${ft==='todos'?' on':''}" onclick="setFt('todos')">Todos (${all.length})</button>
+          <button class="tab${ft==='pago'?' on':''}" onclick="setFt('pago')">Pagos (${pago})</button>
+          <button class="tab${ft==='pendente'?' on':''}" onclick="setFt('pendente')">Pendentes (${pend})</button>
+        </div>
+      </div>
+      <div class="tw"><table class="dt">
+        <thead><tr><th>Associado</th><th>Data</th><th>Parcela</th><th>Status</th><th style="text-align:right">Valor Líquido</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--w3)">Nenhum registro encontrado</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+function setFt(f){filterTab=f;const el=document.getElementById('pg-indenizacoes');if(el){el.innerHTML='';renderList(el);}}
+
+// ══════════════ SHOW DETAIL ══════════════
+function showDetail(id,mesKey){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const mes=DB.meses[mesKey||mesAtivo];
+  if(!mes)return;
+  const i=mes.indenizacoes.find(x=>x.id===id);
+  if(!i)return;
+  const isFer=x=>x.status==='FERIADO';
+  let body='';
+  if(isFer(i)){
+    body=`<div class="dg"><p style="color:var(--w3);font-size:13px">Sem expediente neste dia.</p></div>`;
+  } else {
+    const descs=[
+      ['Taxa de Transferência',i.taxaTransf||0],['Cota de Participação',i.cotaPart||0],
+      ['Boletos Contribuição',i.boletosContr||0],['Licenciamento',i.licenciamento||0],
+      ['IPVA',i.ipva||0],['Bombeiro',i.bombeiro||0],['Multa',i.multa||0],['Financiamento',i.financiamento||0],
+      ['Franquia',i.franquia||0],['Rateio',i.rateio||0],['Outros',i.outros||0]
+    ].filter(([,v])=>v>0);
+    const totalDesc=descs.reduce((s,[,v])=>s+v,0);
+    body=`
+      <div class="dg">
+        <h4>Dados Gerais</h4>
+        <div class="dr"><span class="dl">Associado</span><span class="dv">${i.nome}</span></div>
+        <div class="dr"><span class="dl">Data</span><span class="dv">${fdt(i.data)}</span></div>
+        ${i.parcela?`<div class="dr"><span class="dl">Parcela</span><span class="dv">${i.parcela}</span></div>`:''}
+        ${i.obs?`<div class="dr"><span class="dl">Observação</span><span class="dv" style="color:var(--orange);font-size:11px">${i.obs}</span></div>`:''}
+      </div>
+      ${totalDesc>0||i.valorFipe>0?`
+      <div class="dg">
+        <h4>Cálculo de Descontos</h4>
+        ${i.valorFipe>0?`<div class="dr"><span class="dl">Valor FIPE</span><span class="dv">${brl(i.valorFipe)}</span></div>`:''}
+        ${descs.map(([l,v])=>`<div class="dr"><span class="dl">— ${l}</span><span class="dv r">− ${brl(v)}</span></div>`).join('')}
+      </div>`:''}
+      <div class="ct2"><span class="cl">Valor a pagar ao associado</span><span class="cv">${brl(i.valorLiq)}</span></div>
+      ${role==='ges'?`<div style="margin-top:12px;display:flex;gap:7px">
+        <button class="btn btn-yg btn-sm" onclick="closeM();startEdit(${i.id})">Editar</button>
+        <button class="btn btn-d btn-sm" onclick="closeM();delItem(${i.id})">Excluir</button>
+      </div>`:''}`;
+  }
+  document.getElementById('mbox').innerHTML=`
+    <div class="mh"><h2>${i.nome}</h2><button class="mc2" onclick="closeM()"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="mb">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:12px"><span class="badge ${statusColor(i.status)}">${i.status}</span></div>
+      ${body}
+    </div>`;
+  document.getElementById('modal').classList.add('on');
+}
+
+function showDay(d,mesKey){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const mes=DB.meses[mesKey||mesAtivo];
+  if(!mes)return;
+  const items=mes.indenizacoes.filter(i=>i.data&&parseInt(i.data.split('-')[2])===d);
+  if(!items.length)return;
+  if(items.length===1){showDetail(items[0].id,mesKey);return;}
+  const rows=items.map(i=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bg3);cursor:pointer;font-size:13px" onclick="closeM();setTimeout(()=>showDetail(${i.id},'${mesKey}'),120)">
+      <div><div style="font-weight:500">${i.nome}</div><div style="font-size:11px;color:var(--w3)">${i.obs||'—'}</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${i.valorLiq>0?`<span style="font-family:'IBM Plex Mono',monospace;color:var(--y);font-size:12px;font-weight:600">${brl(i.valorLiq)}</span>`:''}
+        <span class="badge ${statusColor(i.status)}">${i.status}</span>
+      </div>
+    </div>`).join('');
+  document.getElementById('mbox').innerHTML=`
+    <div class="mh"><h2>Dia ${d} — ${mesLabel(mesKey||mesAtivo)}</h2><button class="mc2" onclick="closeM()"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="mb">${rows}</div>`;
+  document.getElementById('modal').classList.add('on');
+}
+
+function showMonthSumm(key,label,valor,pagamentos){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const mes=DB.meses[key];
+  document.getElementById('mbox').innerHTML=`
+    <div class="mh"><h2>${label}</h2><button class="mc2" onclick="closeM()"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="mb">
+      <div class="dg">
+        <h4>Resumo do Mês</h4>
+        <div class="dr"><span class="dl">Total Indenizado</span><span class="dv y">${brl(valor)}</span></div>
+        <div class="dr"><span class="dl">Pagamentos</span><span class="dv">${pagamentos}</span></div>
+        <div class="dr"><span class="dl">Ticket Médio</span><span class="dv">${brl(valor/pagamentos)}</span></div>
+        ${mes?`<div class="dr"><span class="dl">Beneficiários</span><span class="dv">${mes.meta.beneficiarios||'—'}</span></div>`:''}
+      </div>
+      ${mes?`<button class="btn btn-yg btn-sm" onclick="closeM();mesAtivo='${key}';nav('indenizacoes')">Ver indenizações deste mês →</button>`:''}
+    </div>`;
+  document.getElementById('modal').classList.add('on');
+}
+
+function closeM(){document.getElementById('modal').classList.remove('on')}
+
+// ══════════════ CALC PREVIEW ══════════════
+function calcPrev(){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fipe=parseFloat(document.getElementById('ff')?.value)||0;
+  const cpEl=document.getElementById('calcPrev');
+  if(!fipe){if(cpEl)cpEl.innerHTML='';return;}
+  const fields=[['ftt','Taxa Transferência'],['fcp','Cota de Participação'],['fbc','Boletos Contribuição'],['flic','Licenciamento'],['fipva','IPVA'],['fbomb','Bombeiro'],['fmul','Multa'],['ffin','Financiamento']];
+  let totalDesc=0;
+  const lines=fields.map(([fid,l])=>{
+    const v=parseFloat(document.getElementById(fid)?.value)||0;
+    if(v>0){totalDesc+=v;return `<div class="cl2">— ${l}<span>− ${brl(v)}</span></div>`;}
+    return '';
+  }).join('');
+  const liqCalc=fipe-totalDesc;
+  if(cpEl)cpEl.innerHTML=`
+    <div class="cl2">Valor FIPE<span>${brl(fipe)}</span></div>
+    ${lines}
+    <div class="cl2 tot">Valor Líquido Calculado<span>${brl(liqCalc)}</span></div>`;
+  const fliq=document.getElementById('fliq');
+  if(fliq&&totalDesc>0)fliq.value=liqCalc.toFixed(2);
+}
+
+// ══════════════ SALVAR ══════════════
+function salvar(){
+  const nome=document.getElementById('fn')?.value.trim();
+  if(!nome){toast('Informe o nome do associado.','err');return;}
+  const liqVal=parseFloat(document.getElementById('fliq')?.value)||0;
+  const status=document.getElementById('fst')?.value;
+  if(liqVal<=0&&status!=='FERIADO'){toast('Informe o valor líquido.','err');return;}
+  const data={
+    nome,
+    data:document.getElementById('fdt')?.value,
+    parcela:document.getElementById('fp')?.value||'',
+    status:status||'PENDENTE',
+    obs:document.getElementById('fobs')?.value||'',
+    valorFipe:parseFloat(document.getElementById('ff')?.value)||0,
+    taxaTransf:parseFloat(document.getElementById('ftt')?.value)||0,
+    cotaPart:parseFloat(document.getElementById('fcp')?.value)||0,
+    boletosContr:parseFloat(document.getElementById('fbc')?.value)||0,
+    licenciamento:parseFloat(document.getElementById('flic')?.value)||0,
+    ipva:parseFloat(document.getElementById('fipva')?.value)||0,
+    bombeiro:parseFloat(document.getElementById('fbomb')?.value)||0,
+    multa:parseFloat(document.getElementById('fmul')?.value)||0,
+    financiamento:parseFloat(document.getElementById('ffin')?.value)||0,
+    valorLiq:liqVal,
+  };
+  const mes=getMes();
+  if(editId){
+    const idx=mes.indenizacoes.findIndex(i=>i.id===editId);
+    if(idx>=0)mes.indenizacoes[idx]={...mes.indenizacoes[idx],...data};
+    toast('Indenização atualizada!');
+  } else {
+    mes.indenizacoes.push({id:DB.nextId++,...data});
+    toast('Indenização adicionada!');
+  }
+  const hIdx=HIST.findIndex(h=>h.key===mesAtivo);
+  if(hIdx>=0){
+    const all=mes.indenizacoes.filter(i=>i.status!=='FERIADO');
+    HIST[hIdx].valor=all.reduce((s,i)=>s+i.valorLiq,0);
+    HIST[hIdx].pagamentos=all.length;
+  }
+  editId=null;buildNav();nav('indenizacoes');
+}
+
+function startEdit(id){editId=id;nav('novo')}
+
+function delItem(id){
+  if(!confirm('Confirma a exclusão?'))return;
+  const mes=getMes();
+  mes.indenizacoes=mes.indenizacoes.filter(i=>i.id!==id);
+  buildNav();toast('Registro excluído.');nav('gerenciar');
+}
+
+// ══════════════ PDF IMPORT ══════════════
+function dropPDF(e){
+  e.preventDefault();
+  document.getElementById('upz')?.classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type==='application/pdf')handlePDF(f);
+  else toast('Envie um arquivo PDF.','err');
+}
+
+async function handlePDF(file){
+  if(!file)return;
+  const card=document.getElementById('importCard');
+  if(!card)return;
+  card.innerHTML=`<div class="proc"><div class="proc-spin"></div><p>Lendo o PDF...</p><span>Extraindo texto do cronograma</span></div>`;
+  try{
+    const ab=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    let fullText='';
+    for(let p=1;p<=pdf.numPages;p++){
+      const pg=await pdf.getPage(p);
+      const tc=await pg.getTextContent();
+      fullText+=tc.items.map(i=>i.str).join(' ')+'\n';
+    }
+    parsePDFText(fullText,card);
+  }catch(e){
+    card.innerHTML=`<div class="ch"><span class="ct">Upload do Cronograma</span></div><p style="color:var(--red);padding:10px">Erro ao ler PDF: ${e.message}</p>`;
+    toast('Erro ao processar PDF.','err');
+  }
+}
+
+function parsePDFText(text,card){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const mRef=text.match(/(\w+)\s*[-–]\s*(\d{4})/);
+  const MESES_PT={janeiro:'01',fevereiro:'02','março':'03',marco:'03',abril:'04',maio:'05',junho:'06',julho:'07',agosto:'08',setembro:'09',outubro:'10',novembro:'11',dezembro:'12'};
+  let mesNum='06',ano='2026';
+  if(mRef){const mn=mRef[1].toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');if(MESES_PT[mn])mesNum=MESES_PT[mn];ano=mRef[2];}
+  const mesKey=`${ano}-${mesNum}`;
+  const MESES_LABEL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const pagMatch=text.match(/(\d+)\s*pagamentos/i);
+  const benMatch=text.match(/(\d+)\s*(?:benefici|indeniza)/i);
+  const diasMatch=text.match(/(\d+)\s*dias?\s*(?:úteis|com pagamentos)/i);
+  const condMatch=text.match(/(\d+)\s*(?:dependente|condicional)/i);
+  const indenizacoes=[];
+  let nextId=DB.nextId;
+  const lines2=text.split(/\n|\r/);
+  const rowRe=/(.+?)\s+R\$\s*([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d/]+|-)\s+(.+)/;
+  lines2.forEach(line=>{
+    const m=line.match(rowRe);
+    if(!m)return;
+    const nomeRaw=m[1].trim();
+    if(nomeRaw.length<3||nomeRaw.toUpperCase().includes('BENEFICI')||nomeRaw.toUpperCase().includes('TOTAL'))return;
+    const valor=parseFloat(m[2].replace(/\./g,'').replace(',','.'));
+    const dp=m[3].split('/');
+    const dataStr=`${dp[2]}-${dp[1].padStart(2,'0')}-${dp[0].padStart(2,'0')}`;
+    const parcela=m[4]==='-'?'':m[4];
+    const statusRaw=m[5].trim().toUpperCase();
+    let status='PENDENTE';
+    if(statusRaw.includes('PAGO')&&!statusRaw.includes('DEPENDE'))status='PAGO';
+    else if(statusRaw.includes('DEPENDE'))status='DEPENDE DO BOLETO';
+    else if(statusRaw.includes('VALOR RESTANTE'))status='VALOR RESTANTE';
+    else if(statusRaw.includes('FERIADO'))status='FERIADO';
+    const obsM=m[5].match(/(?:DEPENDE DO BOLETO|PAGO|PENDENTE|VALOR RESTANTE|FERIADO)\s+(.*)/i);
+    const obs=obsM?obsM[1].trim():'';
+    indenizacoes.push({id:nextId++,nome:nomeRaw,data:dataStr,parcela,status,obs,valorLiq:valor,valorFipe:0,taxaTransf:0,cotaPart:0,boletosContr:0,licenciamento:0,ipva:0,bombeiro:0,multa:0,financiamento:0});
+  });
+  indenizacoes.sort((a,b)=>a.data.localeCompare(b.data));
+  DB.nextId=nextId;
+  const labelFull=`${MESES_LABEL[parseInt(mesNum)-1]} ${ano}`;
+  const previewRows=indenizacoes.map(i=>`
+    <div class="imp-item">
+      <div class="in">${i.nome}</div>
+      <div class="id2">${fdt(i.data)}</div>
+      <div class="iv">${i.valorLiq>0?brl(i.valorLiq):'—'}</div>
+      <div class="ib"><span class="badge ${statusColor(i.status)}">${i.status}</span></div>
+    </div>`).join('');
+  const totalPrev=indenizacoes.filter(i=>i.status!=='FERIADO').reduce((s,i)=>s+i.valorLiq,0);
+  card.innerHTML=`
+    <div class="ch"><span class="ct">PDF Lido — ${labelFull}</span></div>
+    <div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:12px">
+      <span>Total: <strong style="color:var(--y)">${brl(totalPrev)}</strong></span>
+      <span>Pagamentos: <strong>${indenizacoes.filter(i=>i.status!=='FERIADO').length}</strong></span>
+    </div>
+    ${previewRows||'<p style="color:var(--w3);font-size:12px;padding:8px 0">Nenhuma indenização identificada automaticamente.</p>'}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-p" onclick="confirmImport('${mesKey}','${labelFull}',${JSON.stringify(indenizacoes).replace(/'/g,"&apos;")},${pagMatch?pagMatch[1]:indenizacoes.filter(i=>i.status!=='FERIADO').length},${benMatch?benMatch[1]:new Set(indenizacoes.filter(i=>i.status!=='FERIADO').map(i=>i.nome)).size},${diasMatch?diasMatch[1]:0},${condMatch?condMatch[1]:0})">
+        Confirmar e importar
+      </button>
+      <button class="btn btn-g" onclick="nav('importar')">Cancelar</button>
+    </div>`;
+}
+
+function confirmImport(key,label,indenizacoes,pag,ben,dias,cond){
+  const total=indenizacoes.filter(i=>i.status!=='FERIADO').reduce((s,i)=>s+i.valorLiq,0);
+  DB.meses[key]={label,indenizacoes,meta:{totalBruto:total,pagamentos:pag,beneficiarios:ben,diasPag:dias,condicionais:cond}};
+  const hIdx=HIST.findIndex(h=>h.key===key);
+  if(hIdx>=0){HIST[hIdx].valor=total;HIST[hIdx].pagamentos=pag;}
+  else HIST.unshift({key,label:label.slice(0,3)+'/'+label.slice(-2),valor:total,pagamentos:pag});
+  HIST.sort((a,b)=>b.key.localeCompare(a.key));
+  mesAtivo=key;
+  buildNav();
+  toast(`${label} importado! ${indenizacoes.length} registros.`,'suc');
+  nav('dashboard');
+}
 </script>
 </body>
 </html>
