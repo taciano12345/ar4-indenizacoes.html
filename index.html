@@ -762,6 +762,23 @@ body.light::before,body.light::after{display:none}
   @page{margin:1cm;size:A4 landscape}
 }
 
+
+/* ══════════════ TOAST ══════════════ */
+.toast{
+  position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--bg3);border:1px solid var(--bg5);color:var(--w);
+  padding:10px 18px;border-radius:30px;font-size:13px;font-weight:500;
+  display:flex;align-items:center;gap:8px;z-index:9999;
+  opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.suc .ti{color:#4ade80}
+.toast.err .ti{color:#f87171}
+.toast.err{border-color:rgba(248,113,113,.3)}
+.toast.inf .ti{color:#93c5fd}
+.toast .ti svg{width:14px;height:14px;stroke-width:2.5;stroke:currentColor;fill:none}
+@media(max-width:600px){.toast{bottom:80px;font-size:12px;max-width:90vw;white-space:normal;text-align:center}}
 </style>
 </head>
 <body>
@@ -3350,7 +3367,7 @@ function toggleTheme(){
 const mesLabel=k=>DB.meses[k]?DB.meses[k].label:k;
 
 // ══════════════ TIMEOUT DE SESSÃO ══════════════
-let _timeoutTimer=null;
+let _timeoutTimer=null,_warnTimer=null,_warnInterval=null;
 function resetTimeout(){
   clearTimeout(_timeoutTimer);
   _timeoutTimer=setTimeout(()=>{
@@ -3666,6 +3683,239 @@ function confirmImport(key,label,indenizacoes,pag,ben,dias,cond){
   buildNav();
   toast(`${label} importado! ${indenizacoes.length} registros.`,'suc');
   nav('dashboard');
+}
+
+// ══════════════ TOGGLE SENHA (olhinho) ══════════════
+function togglePass(inputId,btn){
+  const inp=document.getElementById(inputId);
+  if(!inp)return;
+  const show=inp.type==='password';
+  inp.type=show?'text':'password';
+  if(btn)btn.innerHTML=show
+    ?'<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    :'<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+// ══════════════ CONSULTORES ══════════════
+function addConsultor(){
+  const inp=document.getElementById('novoConsInput');
+  if(!inp)return;
+  const nome=inp.value.trim().toUpperCase();
+  if(!nome){toast('Informe o nome do consultor.','err');return;}
+  const cons=getConsultores();
+  if(cons.includes(nome)){toast('Consultor já cadastrado.','err');return;}
+  cons.push(nome);
+  saveConsultores(cons);
+  inp.value='';
+  toast('Consultor adicionado!');
+  nav('gesCons');
+}
+
+function removerConsultor(nome){
+  if(!confirm('Remover consultor "'+nome+'"?'))return;
+  const cons=getConsultores().filter(c=>c!==nome);
+  saveConsultores(cons);
+  toast('Consultor removido.');
+  nav('gesCons');
+}
+
+// ══════════════ EXPORTAR BACKUP ══════════════
+function exportarBackup(){
+  try{
+    const data={DB,HIST,exportedAt:new Date().toISOString(),version:'ar4-v2'};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='ar4-backup-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Backup exportado com sucesso!');
+    addLog('Backup exportado');
+  }catch(e){toast('Erro ao exportar backup: '+e.message,'err');}
+}
+
+// ══════════════ APROVAÇÕES ══════════════
+function criarAprovacaoTeste(){
+  const mes=getMes();
+  const ind=mes.indenizacoes.filter(i=>i.status!=='FERIADO');
+  if(!ind.length){toast('Nenhuma indenização no mês ativo para criar aprovação.','err');return;}
+  const total=ind.reduce((s,i)=>s+i.valorLiq,0);
+  addAprovacao({
+    mes:mesAtivo,
+    label:mesLabel(mesAtivo),
+    solicitante:currentUser?.nome||'Gestor',
+    totalBruto:total,
+    pagamentos:ind.length,
+    obs:'Aprovação de teste criada manualmente.'
+  });
+  toast('Aprovação de teste criada!');
+  nav('aprovacoes');
+}
+
+function responderAprovacao(id,acao){
+  const aprov=getAprovacoes();
+  const idx=aprov.findIndex(a=>a.id===id);
+  if(idx<0)return;
+  const obs=document.getElementById('obsAprov'+id)?.value||'';
+  aprov[idx].status=acao==='aprovar'?'APROVADO':'REPROVADO';
+  aprov[idx].resposta=obs;
+  aprov[idx].respondidoPor=currentUser?.nome||role;
+  aprov[idx].respondidoEm=new Date().toISOString();
+  saveAprovacoes(aprov);
+  if(acao==='aprovar')aplicarAprovacao(aprov[idx]);
+  toast(acao==='aprovar'?'Aprovação confirmada!':'Reprovado.');
+  nav('aprovacoes');
+}
+
+function cancelarAprovacao(id){
+  if(!confirm('Cancelar esta solicitação?'))return;
+  const aprov=getAprovacoes().filter(a=>a.id!==id);
+  saveAprovacoes(aprov);
+  toast('Solicitação cancelada.');
+  nav('aprovacoes');
+}
+
+function aplicarAprovacao(aprov){
+  // Mark all indenizacoes of that month as approved
+  addLog('Aprovação aplicada: '+aprov.label);
+}
+
+// ══════════════ NOTIFICAÇÕES ══════════════
+function ativarNotificacoes(){
+  if(!('Notification' in window)){toast('Notificações não suportadas neste navegador.','err');return;}
+  Notification.requestPermission().then(p=>{
+    if(p==='granted'){
+      try{localStorage.setItem(NOTIF_KEY,'1');}catch(e){}
+      toast('Notificações ativadas!');
+    } else {
+      toast('Permissão negada. Habilite nas configurações do navegador.','err');
+    }
+    nav('notificacoes');
+  });
+}
+
+function desativarNotificacoes(){
+  try{localStorage.setItem(NOTIF_KEY,'0');}catch(e){}
+  toast('Notificações desativadas.');
+  nav('notificacoes');
+}
+
+function enviarNotificacaoLocal(titulo,corpo){
+  if(Notification.permission!=='granted'){toast('Ative as notificações primeiro.','err');return;}
+  try{new Notification(titulo,{body:corpo,icon:'https://i.ibb.co/W4myqrMK/logo-ar4-1769255749160-l5ecu2z7ru.png'});}
+  catch(e){toast('Erro ao enviar notificação: '+e.message,'err');}
+}
+
+function testarNotifDiaria(){
+  const mes=getMes();
+  const ind=mes.indenizacoes.filter(i=>i.status!=='FERIADO');
+  const pend=ind.filter(i=>i.status==='PENDENTE'||i.status==='DEPENDE DO BOLETO').length;
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const total=ind.reduce((s,i)=>s+i.valorLiq,0);
+  enviarNotificacaoLocal('AR4 – Resumo Diário',`${mesLabel(mesAtivo)}: ${ind.length} indenizações | ${brl(total)} | ${pend} pendentes`);
+  toast('Notificação diária enviada!');
+}
+
+function testarNotifSemanal(){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const totalAcum=HIST.reduce((s,h)=>s+h.valor,0);
+  enviarNotificacaoLocal('AR4 – Resumo Semanal',`Acumulado total: ${brl(totalAcum)} em ${HIST.length} meses`);
+  toast('Notificação semanal enviada!');
+}
+
+// ══════════════ AGENDAMENTO ══════════════
+function getAgendConfig(){
+  try{return JSON.parse(localStorage.getItem('ar4_agend')||'{}');}catch(e){return {};}
+}
+function salvarAgendConfig(cfg){
+  if(!cfg){
+    // Read from DOM inputs
+    cfg={
+      diarioAtivo:document.getElementById('toggleDiario')?.checked||false,
+      horaDiario:document.getElementById('horaDiario')?.value||'08:00',
+      mesDiario:document.getElementById('mesDiario')?.value||mesAtivo,
+      semanalAtivo:document.getElementById('toggleSemanal')?.checked||false,
+      diaSemanal:document.getElementById('diaSemanal')?.value||'1',
+    };
+  }
+  try{localStorage.setItem('ar4_agend',JSON.stringify(cfg));toast('Configuração salva!');}catch(e){}
+}
+
+function exportarCronogramaPDF(){
+  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const mes=getMes();
+  const ind=mes.indenizacoes.filter(i=>i.status!=='FERIADO').sort((a,b)=>a.data.localeCompare(b.data));
+  const fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+  const rows=ind.map(i=>`
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;font-size:12px">${i.nome}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center">${fdt(i.data)}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center">${i.parcela||'—'}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:center">${i.status}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:12px;text-align:right">${brl(i.valorLiq)}</td>
+    </tr>`).join('');
+  const total=ind.reduce((s,i)=>s+i.valorLiq,0);
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cronograma ${mesLabel(mesAtivo)}</title>
+    <style>body{font-family:Arial,sans-serif;padding:20px}h1{font-size:20px}table{width:100%;border-collapse:collapse}th{background:#222;color:#fff;padding:8px;border:1px solid #ddd;font-size:12px}</style>
+    </head><body>
+    <h1>AR4 Proteção Veicular — Cronograma ${mesLabel(mesAtivo)}</h1>
+    <p>Total: <strong>${brl(total)}</strong> | Pagamentos: <strong>${ind.length}</strong></p>
+    <table><thead><tr><th>Associado</th><th>Data</th><th>Parcela</th><th>Status</th><th>Valor Líquido</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p style="margin-top:20px;font-size:11px;color:#999">Gerado em ${new Date().toLocaleString('pt-BR')}</p>
+    </body></html>`;
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='cronograma-'+mesAtivo+'.html';a.click();
+  URL.revokeObjectURL(url);
+  toast('Cronograma exportado!');
+}
+
+// ══════════════ IMPORTAR ══════════════
+function switchImportTab(tab){
+  const t1=document.getElementById('importTabPDF');
+  const t2=document.getElementById('importTabTexto');
+  const c1=document.getElementById('importCardPDF');
+  const c2=document.getElementById('importCardTexto');
+  if(tab==='pdf'){
+    if(t1)t1.classList.add('on');if(t2)t2.classList.remove('on');
+    if(c1)c1.style.display='';if(c2)c2.style.display='none';
+  } else {
+    if(t2)t2.classList.add('on');if(t1)t1.classList.remove('on');
+    if(c2)c2.style.display='';if(c1)c1.style.display='none';
+  }
+}
+
+function processarTexto(){
+  const txt=document.getElementById('importTextArea')?.value||'';
+  if(!txt.trim()){toast('Cole o texto do cronograma.','err');return;}
+  const card=document.getElementById('importCardTexto')||document.getElementById('importCard');
+  parsePDFText(txt,card);
+}
+
+function excluirMes(key){
+  if(!confirm('Excluir todos os dados de '+mesLabel(key)+'?'))return;
+  delete DB.meses[key];
+  const idx=HIST.findIndex(h=>h.key===key);
+  if(idx>=0)HIST.splice(idx,1);
+  saveDB();
+  const remaining=Object.keys(DB.meses).sort();
+  if(remaining.length)mesAtivo=remaining[remaining.length-1];
+  buildNav();toast('Mês excluído.');nav('backup');
+}
+
+
+function togglePassView(){
+  const inp=document.getElementById('lpassword');
+  const ic=document.getElementById('eyeIc');
+  if(!inp)return;
+  const show=inp.type==='password';
+  inp.type=show?'text':'password';
+  if(ic)ic.innerHTML=show
+    ?'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+    :'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
 }
 </script>
 </body>
