@@ -779,6 +779,28 @@ body.light::before,body.light::after{display:none}
 .toast.inf .ti{color:#93c5fd}
 .toast .ti svg{width:14px;height:14px;stroke-width:2.5;stroke:currentColor;fill:none}
 @media(max-width:600px){.toast{bottom:80px;font-size:12px;max-width:90vw;white-space:normal;text-align:center}}
+
+/* ══════════ CSS RESTAURADO ══════════ */
+.mc2{background:var(--bg3);border:none;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--w3);transition:all .15s;flex-shrink:0}
+.mc2:hover{background:var(--bg4);color:var(--w)}
+.mc2 svg{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none}
+.cl2{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:var(--w2);border-bottom:1px solid var(--bg3)}
+.cl2 span{font-family:'IBM Plex Mono',monospace;color:var(--w)}
+.cl2.tot{border-bottom:none;border-top:2px solid var(--y);margin-top:4px;padding-top:10px;font-weight:700;color:var(--w)}
+.cl2.tot span{color:var(--y);font-size:15px}
+.ct2{display:flex;justify-content:space-between;align-items:center;background:var(--y4);border:1px solid rgba(245,197,24,.25);border-radius:var(--r);padding:12px 14px;margin-top:12px}
+.ct2 .cl{font-size:12px;color:var(--w2);font-weight:600}
+.ct2 .cv{font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;color:var(--y)}
+.imp-item{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bg3);font-size:12px}
+.imp-item .in{font-weight:500;color:var(--w);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp-item .id2{color:var(--w3);font-size:11px}
+.imp-item .iv{font-family:'IBM Plex Mono',monospace;color:var(--y);font-weight:600}
+.proc{text-align:center;padding:30px 16px}
+.proc p{font-size:14px;font-weight:600;color:var(--w);margin:12px 0 4px}
+.proc span{font-size:12px;color:var(--w3)}
+.proc-spin{width:36px;height:36px;border:3px solid var(--bg4);border-top-color:var(--y);border-radius:50%;margin:0 auto;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.imp-item{grid-template-columns:1fr auto;row-gap:3px}}
 </style>
 </head>
 <body>
@@ -1366,7 +1388,7 @@ if(window._pendingMesAtivo) mesAtivo=window._pendingMesAtivo;
 const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fdt=d=>{if(!d)return '-';const p=d.split('-');return `${p[2]}/${p[1]}/${p[0]}`};
 const isFer=i=>i.status==='FERIADO';
-const getMes=()=>DB.meses[mesAtivo]||{indenizacoes:[],meta:{},label:'',ano:2026,mes:1};
+const getMes=(key)=>DB.meses[key||mesAtivo]||(DB.meses[key||mesAtivo]={label:key||mesAtivo,indenizacoes:[],meta:{}});
 const daysInMonth=(y,m)=>new Date(y,m,0).getDate();
 const firstDayOfMonth=(y,m)=>new Date(y,m-1,1).getDay(); // 0=Sun
 
@@ -1439,7 +1461,7 @@ function login(){
   }else toast('Login ou senha incorretos.','err');
 }
 function logout(){
-  clearTimeout(_timeoutTimer);clearTimeout(_warnTimer);clearInterval(_warnInterval);
+  clearTimeout(_timeoutTimer);if(typeof _warnTimer!=='undefined')clearTimeout(_warnTimer);if(typeof _warnInterval!=='undefined')clearInterval(_warnInterval);
   const w=document.getElementById('timeoutWarn');if(w)w.classList.remove('show');
   try{sessionStorage.removeItem('ar4_session');}catch(e){}
   currentUser=null;
@@ -3366,6 +3388,14 @@ function toggleTheme(){
 // ══════════════ MES LABEL ══════════════
 const mesLabel=k=>DB.meses[k]?DB.meses[k].label:k;
 
+// ══════════════ UTILITÁRIOS GLOBAIS ══════════════
+// Declared as window props so they don't conflict with const inside page functions
+window.brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+window.fdt=d=>d?new Date(d+'T00:00').toLocaleDateString('pt-BR'):'-';
+window.isFerG=i=>i.status==='FERIADO';
+
+
+
 // ══════════════ TIMEOUT DE SESSÃO ══════════════
 let _timeoutTimer=null,_warnTimer=null,_warnInterval=null;
 function resetTimeout(){
@@ -3568,6 +3598,7 @@ function salvar(){
     HIST[hIdx].valor=all.reduce((s,i)=>s+i.valorLiq,0);
     HIST[hIdx].pagamentos=all.length;
   }
+  saveDB();
   editId=null;buildNav();nav('indenizacoes');
 }
 
@@ -3577,6 +3608,13 @@ function delItem(id){
   if(!confirm('Confirma a exclusão?'))return;
   const mes=getMes();
   mes.indenizacoes=mes.indenizacoes.filter(i=>i.id!==id);
+  const hIdx=HIST.findIndex(h=>h.key===mesAtivo);
+  if(hIdx>=0){
+    const all=mes.indenizacoes.filter(i=>!isFer(i));
+    HIST[hIdx].valor=all.reduce((s,i)=>s+(i.valorLiq||0),0);
+    HIST[hIdx].pagamentos=all.length;
+  }
+  saveDB();
   buildNav();toast('Registro excluído.');nav('gerenciar');
 }
 
@@ -3680,6 +3718,7 @@ function confirmImport(key,label,indenizacoes,pag,ben,dias,cond){
   else HIST.unshift({key,label:label.slice(0,3)+'/'+label.slice(-2),valor:total,pagamentos:pag});
   HIST.sort((a,b)=>b.key.localeCompare(a.key));
   mesAtivo=key;
+  saveDB();
   buildNav();
   toast(`${label} importado! ${indenizacoes.length} registros.`,'suc');
   nav('dashboard');
@@ -3738,35 +3777,47 @@ function exportarBackup(){
 // ══════════════ APROVAÇÕES ══════════════
 function criarAprovacaoTeste(){
   const mes=getMes();
-  const ind=mes.indenizacoes.filter(i=>i.status!=='FERIADO');
-  if(!ind.length){toast('Nenhuma indenização no mês ativo para criar aprovação.','err');return;}
-  const total=ind.reduce((s,i)=>s+i.valorLiq,0);
+  const ind=mes.indenizacoes||[];
+  const indReal=ind.filter(i=>!window.isFerG(i));
+  if(!indReal.length){toast('Nenhuma indenização no mês ativo para criar aprovação.','err');return;}
+  const total=indReal.reduce((s,i)=>s+(i.valorLiq||0),0);
+  const [mAnoS,mNumS]=mesAtivo.split('-');
   addAprovacao({
-    mes:mesAtivo,
-    label:mesLabel(mesAtivo),
-    solicitante:currentUser?.nome||'Gestor',
-    totalBruto:total,
-    pagamentos:ind.length,
+    id:Date.now(),
+    mesKey:mesAtivo,
+    mesLabel:mesLabel(mesAtivo),
+    mAno:parseInt(mAnoS),
+    mNum:parseInt(mNumS),
+    status:'pendente',
+    criadoEm:new Date().toISOString(),
+    solicitante:(currentUser&&currentUser.nome)||'Gestor',
+    meta:{
+      totalBruto:total,
+      pagamentos:indReal.length,
+      beneficiarios:new Set(indReal.map(i=>i.nome)).size,
+    },
+    indenizacoes:JSON.parse(JSON.stringify(ind)),
     obs:'Aprovação de teste criada manualmente.'
   });
   toast('Aprovação de teste criada!');
   nav('aprovacoes');
 }
 
+
 function responderAprovacao(id,acao){
   const aprov=getAprovacoes();
   const idx=aprov.findIndex(a=>a.id===id);
-  if(idx<0)return;
-  const obs=document.getElementById('obsAprov'+id)?.value||'';
-  aprov[idx].status=acao==='aprovar'?'APROVADO':'REPROVADO';
+  if(idx<0){toast('Aprovação não encontrada.','err');return;}
+  const obs=document.getElementById('obs_'+id)?(document.getElementById('obs_'+id).value||''):'';
+  aprov[idx].status=acao; // 'aprovado' ou 'reprovado'
   aprov[idx].resposta=obs;
-  aprov[idx].respondidoPor=currentUser?.nome||role;
+  aprov[idx].respondidoPor=(currentUser&&currentUser.nome)||role;
   aprov[idx].respondidoEm=new Date().toISOString();
   saveAprovacoes(aprov);
-  if(acao==='aprovar')aplicarAprovacao(aprov[idx]);
-  toast(acao==='aprovar'?'Aprovação confirmada!':'Reprovado.');
+  toast(acao==='aprovado'?'Cronograma aprovado!':'Cronograma reprovado.');
   nav('aprovacoes');
 }
+
 
 function cancelarAprovacao(id){
   if(!confirm('Cancelar esta solicitação?'))return;
@@ -3776,10 +3827,27 @@ function cancelarAprovacao(id){
   nav('aprovacoes');
 }
 
-function aplicarAprovacao(aprov){
-  // Mark all indenizacoes of that month as approved
-  addLog('Aprovação aplicada: '+aprov.label);
+function aplicarAprovacao(id){
+  const aprov=getAprovacoes().find(a=>a.id===id);
+  if(!aprov){toast('Aprovação não encontrada.','err');return;}
+  if(DB.meses[aprov.mesKey]){toast('Mês já existe no sistema.','inf');return;}
+  const inds=aprov.indenizacoes||[];
+  const indReal=inds.filter(i=>i.status!=='FERIADO');
+  const total=indReal.reduce((s,i)=>s+(i.valorLiq||0),0);
+  DB.meses[aprov.mesKey]={
+    label:aprov.mesLabel,
+    ano:aprov.mAno,mes:aprov.mNum,
+    indenizacoes:inds,
+    meta:(aprov.meta||{totalBruto:total,pagamentos:indReal.length})
+  };
+  const hIdx=HIST.findIndex(h=>h.key===aprov.mesKey);
+  if(hIdx<0)HIST.unshift({key:aprov.mesKey,label:aprov.mesLabel,valor:total,pagamentos:indReal.length});
+  HIST.sort((a,b)=>b.key.localeCompare(a.key));
+  mesAtivo=aprov.mesKey;
+  saveDB();
+  addLog('Aprovação aplicada: '+aprov.mesLabel);
 }
+
 
 // ══════════════ NOTIFICAÇÕES ══════════════
 function ativarNotificacoes(){
@@ -3809,16 +3877,15 @@ function enviarNotificacaoLocal(titulo,corpo){
 
 function testarNotifDiaria(){
   const mes=getMes();
-  const ind=mes.indenizacoes.filter(i=>i.status!=='FERIADO');
+  const ind=mes.indenizacoes.filter(i=>!window.isFerG(i));
   const pend=ind.filter(i=>i.status==='PENDENTE'||i.status==='DEPENDE DO BOLETO').length;
-  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const total=ind.reduce((s,i)=>s+i.valorLiq,0);
-  enviarNotificacaoLocal('AR4 – Resumo Diário',`${mesLabel(mesAtivo)}: ${ind.length} indenizações | ${brl(total)} | ${pend} pendentes`);
+  enviarNotificacaoLocal('AR4 – Resumo Diário',`${mesLabel(mesAtivo)}: ${ind.length} indenizações | ${window.brl(total)} | ${pend} pendentes`);
   toast('Notificação diária enviada!');
 }
 
 function testarNotifSemanal(){
-  const brl=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const brl=window.brl;
   const totalAcum=HIST.reduce((s,h)=>s+h.valor,0);
   enviarNotificacaoLocal('AR4 – Resumo Semanal',`Acumulado total: ${brl(totalAcum)} em ${HIST.length} meses`);
   toast('Notificação semanal enviada!');
@@ -3916,6 +3983,29 @@ function togglePassView(){
   if(ic)ic.innerHTML=show
     ?'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
     :'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+}
+
+function restaurarBackup(input){
+  const file=input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data.DB&&!data.meses){toast('Arquivo inválido.','err');return;}
+      if(!confirm('Isso vai substituir TODOS os dados atuais. Confirma?'))return;
+      const src=data.DB||data;
+      if(src.meses)Object.assign(DB.meses,src.meses);
+      if(src.nextId)DB.nextId=src.nextId;
+      if(src.aprovacoes)DB.aprovacoes=src.aprovacoes;
+      if(src.log)DB.log=src.log;
+      if(data.HIST)HIST.splice(0,HIST.length,...data.HIST);
+      saveDB();buildNav();
+      toast('Backup restaurado com sucesso!');
+      nav('dashboard');
+    }catch(err){toast('Erro ao restaurar: '+err.message,'err');}
+  };
+  reader.readAsText(file);
 }
 </script>
 </body>
