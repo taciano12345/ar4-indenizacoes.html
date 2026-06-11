@@ -945,7 +945,13 @@ body.light::before,body.light::after{display:none}
 </div>
 
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// Worker do pdf.js: tenta carregar como blob local (elimina aviso de fake worker)
+const PDF_WORKER_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc=PDF_WORKER_URL;
+fetch(PDF_WORKER_URL).then(r=>r.text()).then(code=>{
+  const blob=new Blob([code],{type:'application/javascript'});
+  pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(blob);
+}).catch(()=>{/* mantém URL do CDN; fallback interno do pdf.js cuida do resto */});
 
 // ══ SPLASH — declared first so INIT can call it ══
 function hideSplash(){
