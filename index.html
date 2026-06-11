@@ -801,6 +801,9 @@ body.light::before,body.light::after{display:none}
 .proc-spin{width:36px;height:36px;border:3px solid var(--bg4);border-top-color:var(--y);border-radius:50%;margin:0 auto;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:600px){.imp-item{grid-template-columns:1fr auto;row-gap:3px}}
+.imp-item .ib{display:flex;justify-content:flex-end}
+.bar-col{transition:opacity .2s;cursor:pointer}
+.bar-col:hover{opacity:.8}
 </style>
 </head>
 <body>
@@ -1297,31 +1300,12 @@ async function loadDB() {
 }
 
 // ══ USERS SAVE ════════════════════════════════════════════════════════
-function saveUsers(users) {
-  if (AR4_CONFIG.provider === 'localStorage') {
-    try { localStorage.setItem(USERS_KEY_LS, JSON.stringify(users)); } catch(e) {}
-    return;
-  }
-  // Para outros providers: salve users junto com saveDB ou em tabela separada
-  // Exemplo Supabase: POST /rest/v1/ar4_users com { id: 'users', payload: users }
-  try { localStorage.setItem(USERS_KEY_LS, JSON.stringify(users)); } catch(e) {}
-}
+// (saveUsers da camada de dados removido — duplicado; versão ativa abaixo)
+
 
 // ══ USERS LOAD ════════════════════════════════════════════════════════
-function getUsers() {
-  try {
-    // Try both possible keys (compatibility with older versions)
-    const s = localStorage.getItem(USERS_KEY_LS) || localStorage.getItem('ar4_users');
-    if (s) {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch(e) {}
-  return [
-    { id:1, nome:'Gestor', login:'admin', senha:'admin', perfil:'ges', ativo:true },
-    { id:2, nome:'Diretoria', login:'dir', senha:'1234', perfil:'dir', ativo:true }
-  ];
-}
+// (getUsers da camada de dados removido — duplicado; versão ativa abaixo)
+
 
 // ══ INIT ══════════════════════════════════════════════════════════════
 try{const t=localStorage.getItem('ar4_theme');if(t==='light')applyTheme('light');}catch(e){}
@@ -3331,9 +3315,32 @@ function applyTheme(t){
 // ══════════════ FORCE PASSWORD CHANGE ══════════════
 function checkForcePassword(){
   const users=getUsers();
-  const u=users.find(x=>x.id===currentUser?.id);
-  if(u&&u.forceChange){nav('senhas');toast('Troque sua senha antes de continuar.','inf');return true;}
+  const u=users.find(x=>x.id===(currentUser&&currentUser.id));
+  if(u&&u.forceChange){
+    const scr=document.getElementById('forcePassScreen');
+    if(scr)scr.style.display='flex';
+    return true;
+  }
   return false;
+}
+
+function confirmarForceSenha(){
+  const p1=document.getElementById('fp1')?document.getElementById('fp1').value:'';
+  const p2=document.getElementById('fp2')?document.getElementById('fp2').value:'';
+  if(!p1||p1.length<4){toast('A senha deve ter pelo menos 4 caracteres.','err');return;}
+  if(p1!==p2){toast('As senhas não coincidem.','err');return;}
+  const users=getUsers();
+  const idx=users.findIndex(x=>x.id===(currentUser&&currentUser.id));
+  if(idx<0){toast('Usuário não encontrado.','err');return;}
+  users[idx].senha=p1;
+  users[idx].forceChange=false;
+  saveUsers(users);
+  currentUser=users[idx];
+  const scr=document.getElementById('forcePassScreen');
+  if(scr)scr.style.display='none';
+  toast('Senha definida com sucesso!');
+  addLog('Senha alterada (primeiro acesso): '+currentUser.login);
+  if(role==='dir'){nav('boasvindas');}else{nav('dashboard');}
 }
 
 // ══════════════ NOTIFICAÇÕES AGENDADAS ══════════════
@@ -3582,7 +3589,9 @@ function salvar(){
     multa:parseFloat(document.getElementById('fmul')?.value)||0,
     financiamento:parseFloat(document.getElementById('ffin')?.value)||0,
     valorLiq:liqVal,
+    comprovante:window._comprovante||(editId?(getMes().indenizacoes.find(i=>i.id===editId)||{}).comprovante:null)||null,
   };
+  window._comprovante=null;
   const mes=getMes();
   if(editId){
     const idx=mes.indenizacoes.findIndex(i=>i.id===editId);
@@ -4006,6 +4015,22 @@ function restaurarBackup(input){
     }catch(err){toast('Erro ao restaurar: '+err.message,'err');}
   };
   reader.readAsText(file);
+}
+
+// ══════════════ COMPROVANTE ══════════════
+function handleComprovante(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  if(file.size>2*1024*1024){toast('Arquivo muito grande (máx 2MB).','err');input.value='';return;}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    window._comprovante={nome:file.name,tipo:file.type,data:e.target.result};
+    const lbl=document.getElementById('compLabel');
+    if(lbl)lbl.innerHTML='<span style="color:#4ade80">✓ '+file.name+'</span>';
+    toast('Comprovante anexado!');
+  };
+  reader.onerror=()=>toast('Erro ao ler o arquivo.','err');
+  reader.readAsDataURL(file);
 }
 </script>
 </body>
