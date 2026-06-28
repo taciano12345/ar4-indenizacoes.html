@@ -882,7 +882,7 @@ body.light::before,body.light::after{display:none}
           </button>
         </div>
       </div>
-      <button class="lbtn" onclick="login()" style="letter-spacing:.2px">Entrar no sistema</button>
+      <button id="loginBtn" class="lbtn" onclick="login()" style="letter-spacing:.2px">Entrar no sistema</button>
     </div>
   </div>
 </div>
@@ -1467,11 +1467,26 @@ let currentUser=null;
 
 // ══════════════ AUTH ══════════════
 function selR(r){role=r;document.getElementById('bD').classList.toggle('on',r==='dir');document.getElementById('bG').classList.toggle('on',r==='ges')}
-function login(){
+async function login(){
   const loginVal=document.getElementById('lp').value.trim();
   const passVal=document.getElementById('lpassword').value;
+  const btn=document.getElementById('loginBtn');
+  // Se conectado ao banco, baixa os usuários mais recentes ANTES de validar
+  if(isSB()){
+    if(btn){btn.disabled=true;btn.textContent='Entrando...';}
+    try{
+      const remoteUsers=await sbReq('usuarios?select=*');
+      if(remoteUsers&&remoteUsers.length){
+        saveUsersLocal(remoteUsers.map(u=>({
+          id:u.id,nome:u.nome,login:u.login,senha:u.senha,
+          perfil:u.perfil,ativo:u.ativo!==false,forceChange:!!u.force_change
+        })));
+      }
+    }catch(e){console.warn('[AR4] não foi possível buscar usuários do banco:',e.message);}
+    if(btn){btn.disabled=false;btn.textContent='Entrar no sistema';}
+  }
   const users=getUsers();
-  const found=users.find(u=>u.ativo&&u.login.toLowerCase()===loginVal.toLowerCase()&&u.senha===passVal);
+  const found=users.find(u=>(u.ativo!==false)&&String(u.login).trim().toLowerCase()===loginVal.toLowerCase()&&String(u.senha)===passVal);
   if(found){
     currentUser=found;
     role=found.perfil;
