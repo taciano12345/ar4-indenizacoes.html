@@ -1060,25 +1060,17 @@ const AR4_CONFIG = {
   // ┌─────────────────────────────────────────────────────────────────┐
   // │ PROVIDER ATIVO: troque para 'supabase', 'firebase', 'api'       │
   // └─────────────────────────────────────────────────────────────────┘
-  provider: 'localStorage',
+  provider: 'supabase',
 
   // ── Supabase (https://supabase.com — gratuito até 500MB) ──────────
   // provider: 'supabase',
   supabase: {
-    url: 'https://SEU-PROJETO.supabase.co',
-    anonKey: 'SUA-CHAVE-ANONIMA-PUBLICA',
-    table: 'ar4_data',          // nome da tabela no Supabase
-    // Estrutura da tabela:
-    // CREATE TABLE ar4_data (
-    //   id TEXT PRIMARY KEY DEFAULT 'main',
-    //   payload JSONB,
-    //   updated_at TIMESTAMPTZ DEFAULT NOW()
-    // );
-    // CREATE TABLE ar4_users (
-    //   id TEXT PRIMARY KEY DEFAULT 'users',
-    //   payload JSONB,
-    //   updated_at TIMESTAMPTZ DEFAULT NOW()
-    // );
+    url: 'https://nbbvohoitmmwhzvnyqww.supabase.co',   // ← Settings → API → Project URL
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5iYnZvaG9pdG1td2h6dm55cXd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1MzExMDIsImV4cCI6MjA5ODEwNzEwMn0.J3uwWHxNOCHTqrk_aksp5pId4tZkHpeZBsXZfGMVljo',     // ← Settings → API → anon public
+    // As 7 tabelas (meses, indenizacoes, consultores, usuarios,
+    // aprovacoes, logs, config) são criadas pelo arquivo
+    // ar4-setup-banco.sql — rode-o no SQL Editor do Supabase.
+    // A API REST é gerada automaticamente pelo Supabase.
   },
 
   // ── Firebase Firestore (https://firebase.google.com) ──────────────
@@ -1120,189 +1112,239 @@ const AR4_CONFIG = {
 const DB_KEY = 'ar4_db_v1', HIST_KEY = 'ar4_hist_v1', USERS_KEY_LS = 'ar4_users_v1';
 
 // ══ SAVE ══ Altere apenas o bloco do seu provider ════════════════════
-async function saveDB() {
-  const payload = {
-    meses: DB.meses,
-    nextId: DB.nextId,
-    aprovacoes: DB.aprovacoes || [],
-    log: DB.log || [],
-    avisoGestor: DB.avisoGestor || '',
-    ts: Date.now()
+
+// ── Helper Supabase (API REST PostgREST) ──
+// ╔════════════════════════════════════════════════════════════════════╗
+// ║  CAMADA DE SINCRONIZAÇÃO COM O BACKEND (Supabase — PostgreSQL)      ║
+// ║  Arquitetura local-first: o app trabalha com localStorage           ║
+// ║  (instantâneo, funciona offline) e sincroniza com as tabelas        ║
+// ║  do banco em segundo plano através da API REST do Supabase.         ║
+// ╚════════════════════════════════════════════════════════════════════╝
+
+function isSB(){
+  return AR4_CONFIG.provider==='supabase'
+    && AR4_CONFIG.supabase.url
+    && !AR4_CONFIG.supabase.url.includes('SEU-PROJETO');
+}
+
+async function sbReq(path, method='GET', body=null, query=''){
+  const {url, anonKey} = AR4_CONFIG.supabase;
+  const headers = {
+    'apikey': anonKey,
+    'Authorization': 'Bearer '+anonKey,
+    'Content-Type': 'application/json',
+    'Prefer': method==='POST' ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal'
   };
-
-  // ── localStorage (padrão) ─────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'localStorage') {
-    try {
-      localStorage.setItem(DB_KEY, JSON.stringify({ ...payload }));
-      localStorage.setItem(HIST_KEY, JSON.stringify(HIST));
-    } catch(e) { console.warn('[AR4] localStorage cheio:', e); }
-    return;
+  const res = await fetch(`${url}/rest/v1/${path}${query}`, {
+    method, headers, body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error(`${method} ${path}: ${res.status} ${txt.slice(0,180)}`);
   }
+  if(method==='GET') return res.json();
+  return null;
+}
 
-  // ── Supabase ──────────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'supabase') {
-    const { url, anonKey, table } = AR4_CONFIG.supabase;
-    try {
-      await fetch(`${url}/rest/v1/${table}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': anonKey,
-          'Authorization': `Bearer ${anonKey}`,
-          'Prefer': 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify({ id: 'main', payload: { ...payload, hist: HIST } })
+// ── PUSH: envia tudo para as tabelas do banco (debounced) ──────────────
+let _pushTimer=null, _pushing=false, _pushAgain=false;
+function schedulePush(){
+  if(!isSB())return;
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(sbPushAll, 1800);
+}
+
+async function sbPushAll(){
+  if(!isSB())return;
+  if(_pushing){_pushAgain=true;return;}
+  _pushing=true;
+  window._syncState='enviando';
+  try{
+    // 1. MESES (upsert) + remover meses excluídos
+    const mesesRows=Object.entries(DB.meses).map(([key,m])=>({
+      key, label:m.label, ano:m.ano||parseInt(key.split('-')[0]),
+      mes:m.mes||parseInt(key.split('-')[1]), meta:m.meta||{},
+      updated_at:new Date().toISOString()
+    }));
+    const remoteKeys=await sbReq('meses?select=key');
+    const localKeys=new Set(Object.keys(DB.meses));
+    const toDelete=remoteKeys.filter(r=>!localKeys.has(r.key)).map(r=>r.key);
+    for(const k of toDelete){
+      await sbReq(`meses?key=eq.${encodeURIComponent(k)}`,'DELETE'); // CASCADE apaga indenizações
+    }
+    if(mesesRows.length) await sbReq('meses','POST',mesesRows,'?on_conflict=key');
+
+    // 2. INDENIZAÇÕES (substituição completa = espelho do estado local)
+    await sbReq('indenizacoes?id=gte.0','DELETE');
+    const indRows=[];
+    Object.entries(DB.meses).forEach(([key,m])=>{
+      (m.indenizacoes||[]).forEach(i=>{
+        indRows.push({
+          id:i.id, mes_key:key, nome:i.nome||'', data:i.data||null,
+          parcela:i.parcela||'', status:i.status||'PENDENTE', obs:i.obs||'',
+          consultor:i.consultor||'', valor_liq:i.valorLiq||0, valor_fipe:i.valorFipe||0,
+          descontos:{taxaTransf:i.taxaTransf||0,cotaPart:i.cotaPart||0,boletosContr:i.boletosContr||0,
+            licenciamento:i.licenciamento||0,ipva:i.ipva||0,bombeiro:i.bombeiro||0,
+            multa:i.multa||0,financiamento:i.financiamento||0},
+          comprovante:i.comprovante||null,
+          updated_at:new Date().toISOString()
+        });
       });
-    } catch(e) { console.error('[AR4] Supabase save error:', e); }
-    return;
-  }
+    });
+    // envia em lotes de 200 para não estourar payload
+    for(let i=0;i<indRows.length;i+=200){
+      await sbReq('indenizacoes','POST',indRows.slice(i,i+200),'?on_conflict=id');
+    }
 
-  // ── Firebase Firestore ────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'firebase') {
-    try {
-      const db = firebase.firestore();
-      await db.collection(AR4_CONFIG.firebase.collection).doc('data').set({ ...payload, hist: HIST });
-    } catch(e) { console.error('[AR4] Firebase save error:', e); }
-    return;
-  }
+    // 3. CONSULTORES (espelho)
+    await sbReq('consultores?nome=neq.__never__','DELETE');
+    const consRows=getConsultores().map(nome=>({nome}));
+    if(consRows.length) await sbReq('consultores','POST',consRows,'?on_conflict=nome');
 
-  // ── REST API ──────────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'api') {
-    const { baseUrl, token } = AR4_CONFIG.api;
-    try {
-      await fetch(`${baseUrl}/data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...payload, hist: HIST })
-      });
-    } catch(e) { console.error('[AR4] API save error:', e); }
-    return;
-  }
+    // 4. USUÁRIOS (upsert por id)
+    const userRows=getUsers().map(u=>({
+      id:u.id, nome:u.nome, login:u.login, senha:u.senha,
+      perfil:u.perfil, ativo:u.ativo!==false, force_change:!!u.forceChange,
+      updated_at:new Date().toISOString()
+    }));
+    if(userRows.length) await sbReq('usuarios','POST',userRows,'?on_conflict=id');
 
-  // ── MongoDB Atlas ─────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'mongodb') {
-    const { dataApiUrl, apiKey, database, dataCollection } = AR4_CONFIG.mongodb;
-    try {
-      await fetch(`${dataApiUrl}/action/replaceOne`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
-        body: JSON.stringify({
-          dataSource: 'Cluster0', database, collection: dataCollection,
-          filter: { _id: 'main' },
-          replacement: { _id: 'main', ...payload, hist: HIST },
-          upsert: true
-        })
-      });
-    } catch(e) { console.error('[AR4] MongoDB save error:', e); }
-    return;
+    // 5. APROVAÇÕES (espelho)
+    await sbReq('aprovacoes?id=gte.0','DELETE');
+    const apRows=(DB.aprovacoes||[]).map(a=>({
+      id:a.id, mes_key:a.mesKey||null, status:a.status||'pendente',
+      payload:a, criado_em:a.criadoEm||new Date().toISOString(),
+      updated_at:new Date().toISOString()
+    }));
+    if(apRows.length) await sbReq('aprovacoes','POST',apRows,'?on_conflict=id');
+
+    // 6. CONFIG (hist, aviso, nextId, log)
+    await sbReq('config','POST',[
+      {key:'hist', value:HIST, updated_at:new Date().toISOString()},
+      {key:'avisoGestor', value:{texto:DB.avisoGestor||''}, updated_at:new Date().toISOString()},
+      {key:'nextId', value:{n:DB.nextId}, updated_at:new Date().toISOString()},
+      {key:'log', value:(DB.log||[]).slice(0,300), updated_at:new Date().toISOString()}
+    ],'?on_conflict=key');
+
+    window._syncState='ok';
+    window._lastSync=new Date().toISOString();
+  }catch(e){
+    window._syncState='erro';
+    console.warn('[AR4 sync] push falhou:', e.message);
+    toast('Sem conexão com o banco — dados salvos localmente.','inf');
+  }finally{
+    _pushing=false;
+    if(_pushAgain){_pushAgain=false;schedulePush();}
   }
 }
 
-// ══ LOAD ══ Altere apenas o bloco do seu provider ════════════════════
-async function loadDB() {
+// ── PULL: busca tudo das tabelas e reconstrói o estado local ───────────
+async function sbPullAll(silent){
+  if(!isSB())return false;
+  window._syncState='baixando';
+  try{
+    const [meses,inds,cons,users,aps,cfg]=await Promise.all([
+      sbReq('meses?select=*'),
+      sbReq('indenizacoes?select=*&order=data.asc'),
+      sbReq('consultores?select=nome&order=nome.asc'),
+      sbReq('usuarios?select=*'),
+      sbReq('aprovacoes?select=*&order=criado_em.desc'),
+      sbReq('config?select=*')
+    ]);
 
-  // ── localStorage (padrão) ─────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'localStorage') {
-    try {
-      const d = localStorage.getItem(DB_KEY);
-      const h = localStorage.getItem(HIST_KEY);
-      if (d) {
-        const p = JSON.parse(d);
-        Object.assign(DB.meses, p.meses || {});
-        DB.nextId = p.nextId || DB.nextId;
-        if (p.aprovacoes) DB.aprovacoes = p.aprovacoes;
-        if (p.log) DB.log = p.log;
-        if (p.avisoGestor !== undefined) DB.avisoGestor = p.avisoGestor;
-      }
-      if (h) {
-        const ph = JSON.parse(h);
-        ph.forEach(item => { if (!HIST.find(x => x.key === item.key)) HIST.push(item); });
-      }
-      // Store most recent month — mesAtivo updated after declaration
-      window._pendingMesAtivo = Object.keys(DB.meses).sort().pop();
-    } catch(e) { console.warn('[AR4] loadDB error:', e); }
-    return;
-  }
-
-  // ── Supabase ──────────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'supabase') {
-    const { url, anonKey, table } = AR4_CONFIG.supabase;
-    try {
-      const res = await fetch(`${url}/rest/v1/${table}?id=eq.main&select=payload`, {
-        headers: { 'apikey': anonKey, 'Authorization': `Bearer ${anonKey}` }
+    // Reconstrói DB.meses
+    const novosMeses={};
+    meses.forEach(m=>{
+      novosMeses[m.key]={label:m.label,ano:m.ano,mes:m.mes,meta:m.meta||{},indenizacoes:[]};
+    });
+    inds.forEach(r=>{
+      if(!novosMeses[r.mes_key])return;
+      const d=r.descontos||{};
+      novosMeses[r.mes_key].indenizacoes.push({
+        id:r.id, nome:r.nome, data:r.data, parcela:r.parcela||'',
+        status:r.status||'PENDENTE', obs:r.obs||'', consultor:r.consultor||'',
+        valorLiq:parseFloat(r.valor_liq)||0, valorFipe:parseFloat(r.valor_fipe)||0,
+        taxaTransf:d.taxaTransf||0, cotaPart:d.cotaPart||0, boletosContr:d.boletosContr||0,
+        licenciamento:d.licenciamento||0, ipva:d.ipva||0, bombeiro:d.bombeiro||0,
+        multa:d.multa||0, financiamento:d.financiamento||0,
+        comprovante:r.comprovante||null
       });
-      const rows = await res.json();
-      if (rows[0]?.payload) {
-        const p = rows[0].payload;
-        Object.assign(DB.meses, p.meses || {});
-        DB.nextId = p.nextId || DB.nextId;
-        if (p.aprovacoes) DB.aprovacoes = p.aprovacoes;
-        if (p.log) DB.log = p.log;
-        if (p.avisoGestor !== undefined) DB.avisoGestor = p.avisoGestor;
-        if (p.hist) p.hist.forEach(h => { if (!HIST.find(x => x.key === h.key)) HIST.push(h); });
-      }
-    } catch(e) { console.error('[AR4] Supabase load error:', e); }
-    return;
-  }
+    });
 
-  // ── Firebase Firestore ────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'firebase') {
-    try {
-      const db = firebase.firestore();
-      const doc = await db.collection(AR4_CONFIG.firebase.collection).doc('data').get();
-      if (doc.exists) {
-        const p = doc.data();
-        Object.assign(DB.meses, p.meses || {});
-        DB.nextId = p.nextId || DB.nextId;
-        if (p.aprovacoes) DB.aprovacoes = p.aprovacoes;
-        if (p.log) DB.log = p.log;
-        if (p.avisoGestor !== undefined) DB.avisoGestor = p.avisoGestor;
-        if (p.hist) p.hist.forEach(h => { if (!HIST.find(x => x.key === h.key)) HIST.push(h); });
+    // Só aplica se o banco tiver dados (evita apagar dados locais num banco recém-criado)
+    if(meses.length>0||users.length>0){
+      if(meses.length>0){
+        for(const k of Object.keys(DB.meses)) delete DB.meses[k];
+        Object.assign(DB.meses,novosMeses);
       }
-    } catch(e) { console.error('[AR4] Firebase load error:', e); }
-    return;
-  }
-
-  // ── REST API ──────────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'api') {
-    const { baseUrl, token } = AR4_CONFIG.api;
-    try {
-      const res = await fetch(`${baseUrl}/data`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const p = await res.json();
-      Object.assign(DB.meses, p.meses || {});
-      DB.nextId = p.nextId || DB.nextId;
-      if (p.aprovacoes) DB.aprovacoes = p.aprovacoes;
-      if (p.log) DB.log = p.log;
-      if (p.avisoGestor !== undefined) DB.avisoGestor = p.avisoGestor;
-      if (p.hist) p.hist.forEach(h => { if (!HIST.find(x => x.key === h.key)) HIST.push(h); });
-    } catch(e) { console.error('[AR4] API load error:', e); }
-    return;
-  }
-
-  // ── MongoDB Atlas ─────────────────────────────────────────────────
-  if (AR4_CONFIG.provider === 'mongodb') {
-    const { dataApiUrl, apiKey, database, dataCollection } = AR4_CONFIG.mongodb;
-    try {
-      const res = await fetch(`${dataApiUrl}/action/findOne`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
-        body: JSON.stringify({ dataSource: 'Cluster0', database, collection: dataCollection, filter: { _id: 'main' } })
-      });
-      const data = await res.json();
-      const p = data.document;
-      if (p) {
-        Object.assign(DB.meses, p.meses || {});
-        DB.nextId = p.nextId || DB.nextId;
-        if (p.aprovacoes) DB.aprovacoes = p.aprovacoes;
-        if (p.log) DB.log = p.log;
-        if (p.avisoGestor !== undefined) DB.avisoGestor = p.avisoGestor;
-        if (p.hist) p.hist.forEach(h => { if (!HIST.find(x => x.key === h.key)) HIST.push(h); });
+      DB.aprovacoes=aps.map(a=>a.payload);
+      const cfgMap={}; cfg.forEach(r=>cfgMap[r.key]=r.value);
+      if(cfgMap.hist){HIST.splice(0,HIST.length,...cfgMap.hist);}
+      if(cfgMap.avisoGestor)DB.avisoGestor=cfgMap.avisoGestor.texto||'';
+      if(cfgMap.nextId&&cfgMap.nextId.n>DB.nextId)DB.nextId=cfgMap.nextId.n;
+      if(cfgMap.log)DB.log=cfgMap.log;
+      if(users.length){
+        saveUsersLocal(users.map(u=>({
+          id:u.id,nome:u.nome,login:u.login,senha:u.senha,
+          perfil:u.perfil,ativo:u.ativo!==false,forceChange:!!u.force_change
+        })));
       }
-    } catch(e) { console.error('[AR4] MongoDB load error:', e); }
-    return;
+      if(cons.length) saveConsultoresLocal(cons.map(r=>r.nome));
+
+      // Atualiza cache local
+      try{
+        localStorage.setItem(DB_KEY,JSON.stringify({meses:DB.meses,nextId:DB.nextId,
+          aprovacoes:DB.aprovacoes,log:DB.log,avisoGestor:DB.avisoGestor,ts:Date.now()}));
+        localStorage.setItem(HIST_KEY,JSON.stringify(HIST));
+      }catch(e){}
+
+      const mk=Object.keys(DB.meses).sort();
+      if(mk.length&&typeof mesAtivo!=='undefined'&&!DB.meses[mesAtivo])mesAtivo=mk[mk.length-1];
+    }
+
+    window._syncState='ok';
+    window._lastSync=new Date().toISOString();
+    if(!silent)toast('Dados sincronizados com o banco!','suc');
+    return true;
+  }catch(e){
+    window._syncState='erro';
+    console.warn('[AR4 sync] pull falhou:', e.message);
+    if(!silent)toast('Banco indisponível — usando dados locais.','inf');
+    return false;
   }
+}
+
+// ── SAVE/LOAD principais (local-first) ──────────────────────────────────
+async function saveDB(){
+  const payload={meses:DB.meses,nextId:DB.nextId,aprovacoes:DB.aprovacoes||[],
+    log:DB.log||[],avisoGestor:DB.avisoGestor||'',ts:Date.now()};
+  try{
+    localStorage.setItem(DB_KEY,JSON.stringify(payload));
+    localStorage.setItem(HIST_KEY,JSON.stringify(HIST));
+  }catch(e){console.warn('[AR4] localStorage cheio:',e);}
+  schedulePush(); // sincroniza com o banco em segundo plano
+}
+
+async function loadDB(){
+  // Sempre carrega o cache local primeiro (instantâneo, funciona offline)
+  try{
+    const d=localStorage.getItem(DB_KEY);
+    const h=localStorage.getItem(HIST_KEY);
+    if(d){
+      const p=JSON.parse(d);
+      Object.assign(DB.meses,p.meses||{});
+      DB.nextId=p.nextId||DB.nextId;
+      if(p.aprovacoes)DB.aprovacoes=p.aprovacoes;
+      if(p.log)DB.log=p.log;
+      if(p.avisoGestor!==undefined)DB.avisoGestor=p.avisoGestor;
+    }
+    if(h){
+      const ph=JSON.parse(h);
+      ph.forEach(item=>{if(!HIST.find(x=>x.key===item.key))HIST.push(item);});
+    }
+    window._pendingMesAtivo=Object.keys(DB.meses).sort().pop();
+  }catch(e){console.warn('[AR4] loadDB error:',e);}
+  // O pull do banco acontece após o login (ver função login)
 }
 
 // ══ USERS SAVE ════════════════════════════════════════════════════════
@@ -1364,9 +1406,10 @@ function getConsultores(){
     'ROSIMERY','SILVIO','NELSON','JUNIOR BOY','JOSINALDO','KATIA','ANACLETO'
   ].sort();
 }
-function saveConsultores(list){
+function saveConsultoresLocal(list){
   try{localStorage.setItem(CONSULTORES_KEY,JSON.stringify(list));}catch(e){}
 }
+function saveConsultores(list){saveConsultoresLocal(list);schedulePush();}
 HIST.push({key:'2026-06',label:'Jun/26',valor:165071,pagamentos:11});
 
 // ══════════════ STATE ══════════════
@@ -1418,7 +1461,8 @@ function getUsers(){
     {id:2,nome:'Diretoria',login:'dir',senha:'1234',perfil:'dir',ativo:true}
   ];
 }
-function saveUsers(u){try{localStorage.setItem(USERS_KEY,JSON.stringify(u));}catch(e){}}
+function saveUsersLocal(u){try{localStorage.setItem(USERS_KEY,JSON.stringify(u));}catch(e){}}
+function saveUsers(u){saveUsersLocal(u);schedulePush();}
 let currentUser=null;
 
 // ══════════════ AUTH ══════════════
@@ -1443,6 +1487,12 @@ function login(){
     if(_lk.length>0)mesAtivo=_lk[_lk.length-1];
     buildNav();
     resetTimeout();
+    // Sincroniza com o banco em segundo plano e re-renderiza ao concluir
+    if(isSB()){
+      sbPullAll(true).then(ok=>{
+        if(ok){buildNav();try{nav(page);}catch(e){}}
+      });
+    }
     if(checkForcePassword())return;
     // Check scheduled notifications on login
     setTimeout(verificarNotificacoesAgendadas, 2500);
